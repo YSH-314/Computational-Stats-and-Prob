@@ -1,0 +1,281 @@
+---
+title: "Computational Stats & Prob. AIM 5002 Fall 2022 Final projects: Forecast the onset of diabetes"
+author: "Sheng_Han_Yueh"
+date: "12/20/2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+### 1. Abstract
+
+The aim of the study is to build a machine-learning model to forecast the onset of diabetes within 5 years. The data set, Pima Indians Diabetes Database, collected 768 female cases and all from Pima Indian population, near Phoenix, Arizona (Ref 1). The population is renowned for its high incidence rate of diabetes. The eight variables are chosen since they have been found to be significant risk factors among this population. The study derives a 95% confidence interval for the population mean and standard deviation for each attribute in two groups of people. According to the result, the patients who will be diagnosed with diabetes within 5 years have higher mean values in all the attributes. In addition, a test hypothesis is utilized to check whether the mean values of each variant in the two groups have a significant difference. Except for blood pressure, the mean values of other attributes in the two groups have significant differences. Moreover, a logistic regression model was applied to predict whether the person would be diagnosed with diabetes within 5 years or not. By using 80% of the data as training, the area under the curve reached to 0.83.   
+
+### 2. Overview slide
+
+#### 2.1 Context on the data collection 
+
+**Data source:**
+The data comes from the National Institute of Diabetes and Digestive and Kidney Diseases. All patients here are female over 21 years old of Pima Indian heritage.   
+
+1. https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.csv
+2. https://raw.githubusercontent.com/jbrownlee/Datasets/master/pima-indians-diabetes.names
+
+**Collected cases:**
+The data set includes 768 instances. There are 500 instances that are not diagnosed with diabetes within 5 years. On the other hand, 268 instances are diagnosed with diabetes within 5 years. 
+
+#### 2.2 Description of variables
+There are 8 numerical variants as the following that are included in the data set. They have been found to be significant risk factors for diabetes.   
+
+1. Number of times pregnant 
+2. Plasma glucose concentration at 2 hours in an oral glucose tolerance test: normal is below 155 mg/dL (8.6 mmol/L)
+3. Diastolic blood pressure (mm Hg): normal is below 80
+4. Triceps skin fold thickness (mm): gives information about fat reserves of the body by measuring muscle circumference of back side middle upper arm 
+5. 2-Hour serum insulin (uU/ml)
+6. Body mass index, BMI (kg/ m^2)
+7. Diabetes pedigree function: indicates the function which scores likelihood of diabetes based on family history
+8. Age (years)
+
+#### 2.3 Research question 
+
+1. What is the population mean and sigma for the two groups of people
+2. Do the two groups of people have significant differences in each attribute
+3. Whether the logistic regression model helps the classification of two groups of people or not
+
+### 3. Summary statistics
+#### 3.1 Check the number of null value in data set
+```{r error=TRUE}
+data=read.csv(file = 'https://raw.githubusercontent.com/YSH-314/Computational-Stats-and-Prob/main/final%20project/pima-indians-diabetes.csv',header=FALSE)
+names(data)=c('num_of_preg','glucose_concentration','blood_pressure','thickness','insulin','BMI','pedigree_function','Age','diabetes')
+data$diabetes=as.factor(data$diabetes)
+sapply(data, function(x) sum(is.na(x)))
+
+```
+There are no missing value in the data set.
+
+#### 3.2 Summarry statistics of the data set
+```{r error=TRUE}
+summary(data)
+```
+The mean value of each variant matched to the description from the data resource. The range in concentration of insulin is the biggest among these attributes.
+
+### 4. Data visulization
+```{r error=TRUE}
+#install.packages("caTools")
+#install.packages("ROCR")
+library(GGally) #graph
+library(ggplot2)
+library(caTools)
+library(ROCR)
+
+```
+
+We utilized the pair plot to visualize the whole data set. The plot demonstrated the distribution of each attribute through scatter plots, box plots, and density distribution. Also, the Pearson correlation and significance are provided.  
+```{r error=TRUE}
+fig=ggpairs( data,ggplot2::aes(colour=diabetes),upper = list(continuous = wrap('cor', size = 2)))
+fig+theme(axis.text = element_text(size = 4))
+#Ref:2
+```
+From the above density distribution, glucose concentration can easily divide into two groups of people. Through the value of correlation, which is the grey color and labeled as Corr, these attributes have a low linear relationship with each other. The correlation between the concentration of insulin and skin fold thickness and the correlation between age and number of times pregnant are higher than others.   
+
+
+### 5. Statistical output
+#### 5.1 Population mean and s.t.d in 95% CI for each variables in two groups
+The sample size in the two groups is greater than 30 and the sigma of the population is unknown. According to the central limit theory, we could calculate the population means in a 95% confidence interval based on a standard normal distribution by using sample standard deviation. The formula is as the following: 
+
+Population mean with 95% CI:
+\begin{equation}
+\bar{x}\pm{Z_{\frac{\alpha}{2}}\frac{s}{\sqrt{n}}}
+\end{equation}
+
+The population variance follows the chi-square distribution. We calculate the square root of the variance to have a standard deviation for the population. The formula is as the following:
+
+Population s.t.d with 95% CI:
+\begin{equation}
+\sqrt{\frac{(n-1)s^2}{\chi_{\frac{\alpha}{2},n-1}}},\sqrt{\frac{(n-1)s^2}{\chi_{1-\frac{\alpha}{2},n-1}}}
+\end{equation}
+By creating the following self-defined function, we calculate the population mean and s.t.d in 95% CI.
+```{r error=TRUE }
+mean95CI<-function(df) {
+   n=NROW(df)
+   meanx=mean(df)
+   s=sd(df)
+   alpha=0.05
+   lower=meanx-(qnorm(alpha/2,lower.tail = FALSE)*s/sqrt(n))
+   upper=meanx+(qnorm(alpha/2,lower.tail = FALSE)*s/sqrt(n))
+   return (c(lower,upper))
+}
+std95CI<-function(df) {
+   n=NROW(df)
+   meanx=mean(df)
+   s=sd(df)
+   alpha=0.05
+   lower=sqrt((n-1)*s^2/qchisq(alpha/2,n-1,lower.tail=FALSE))
+   upper=sqrt((n-1)*s^2/qchisq(1-(alpha/2),n-1,lower.tail=FALSE))
+   return (c(lower,upper))
+}
+
+```
+
+A summary table was generated to display the lower bound and upper bound of 95% CI for the population means.
+```{r error=TRUE }
+col=colnames(data)
+non=data[data$diabetes==0, ]
+di=data[data$diabetes==1, ]
+CI= matrix( , nrow = 8, ncol = 4)
+stdCI= matrix( , nrow = 8, ncol = 4)
+for (i in 1:8){
+   
+   CI[i,1:2]=mean95CI(non[[col[i]]])
+   stdCI[i,1:2]=std95CI(non[[col[i]]])
+   CI[i,3:4]=mean95CI(di[[col[i]]])
+   stdCI[i,3:4]=std95CI(di[[col[i]]])
+}
+CI_meanres=as.data.frame(CI)
+CI_stdres=as.data.frame(stdCI)
+
+CI_meanres=cbind(col[1:8], CI_meanres)
+CI_stdres=cbind(col[1:8], CI_stdres)
+names(CI_meanres)=c('variables','lowerbound_nondiabetes','upperbound_nondiabetes','lowerbound_diabetes','upperbound_diabetes')
+names(CI_stdres)=c('variables','lowerbound_nondiabetes','upperbound_nondiabetes','lowerbound_diabetes','upperbound_diabetes')
+print(CI_meanres)
+```
+The 95% CI for population mean is as the above table. The patients who will be diagnosed with diabetes within 5 years have higher value in all the attributes. 
+
+A summary table was generated to display the lower bound and upper bound of 95% CI for the population s.t.d.
+```{r error=TRUE  }
+print(CI_stdres)
+```
+The 95% CI for population s.t.d is as the above table. The patients who will be diagnosed with diabetes within 5 years have higher s.t.d value in all the attributes except for BMI and Age. Both the groups have high s.t.d in insulin.
+
+#### 5.2 Hypothesis tests for the difference of means from two groups
+A test hypothesis was applied to examine the significance of differences between the two groups in each variant. The hypothesis is based on the assumption that the population variance of two groups are equal. The null hypothesis is mean of non diseased individuals equals the mean of people that have diabetes within 5 years. The Alternative hypothesis is they are different. Since both sample sizes are greater than 30, Z statistic with two-tailed test is used in this study. The equality of population variance was checked by the ratio of variances from two groups, which value should between 0.5 to 2. In this study, alpha is set to be 0.05 to test the significance of difference. The pooled estimate of the common standard deviation, Sp, is calculated through the following formula:
+\begin{equation}
+S_p=\sqrt{\frac{(n_1-1)s_1^2+(n_2-1)s_2^2}{n_1+n_2-2}}
+\end{equation}
+
+
+The test statistics is as the following equation:
+\begin{equation}
+z=\frac{\bar{x_1}-\bar{x_2}}{S_p\sqrt{\frac{1}{n_1}+\frac{1}{n_2}}}
+\end{equation}
+```{r error=TRUE }
+# set H0: mean1=mean2, H1: mean1 != mean2
+Testformean<-function(df1,df2){
+   n1=NROW(df1)
+   meanx1=mean(df1)
+   s1=sd(df1)
+   n2=NROW(df2)
+   meanx2=mean(df2)
+   s2=sd(df2)
+   alpha=0.05 
+   temp=(s1^2/s2^2)
+   Sp=sqrt(((n1-1)*s1^2+(n2-1)*s2^2)/(n1+n2-2))
+   state_Z=(meanx1-meanx2)/(Sp*sqrt(1/n1+1/n2))
+   pvalue=pnorm(abs(state_Z),lower.tail = FALSE)*2
+   Z=qnorm(alpha/2,lower.tail = FALSE)
+   if (state_Z < -Z || state_Z > Z){
+      return (c('have a significant difference',meanx1,meanx2,pvalue,temp))
+   }else{
+      return (c(' did not have significant difference',meanx1,meanx2,pvalue,temp))
+   }
+   
+}
+
+res= matrix( , nrow = 8, ncol = 5)
+for (i in 1:8){
+   
+   res[i,1:5]=Testformean(non[[col[i]]],di[[col[i]]])
+
+}
+res=as.data.frame(res)
+
+res=cbind(col[1:8], res)
+names(res)=c('variables','significant difference or not','mean_non diabetes','mean_diabetes','p_value','the ratio of variance')
+print(res)
+
+# Ref:3
+
+```
+From the above table, the ratio of the variance of all attributes all fall between 0.5 to 2, meaning the equality of variance in the two groups. According to the result, we found except for blood pressure, other attributes have a significant difference between the mean values of the two groups.
+
+#### 5.3 A logistic regression model is created to classify the two groups of people
+80% of data is included in training data. The rest 20% of the data is the testing data set. A binary logistic regression model was utilized in the study. Moreover, the effect of feature scaling on the model is included in the study. A confusion matrix and ROC curve were used to evaluate the performance of the prediction.    
+
+```{r error=TRUE }
+#Logistic regression before feature scaling
+set.seed(1)
+split <- sample.split(data, SplitRatio = 0.8)
+train <- subset(data, split == "TRUE")
+test <- subset(data, split == "FALSE")
+logmodel <- glm(diabetes~., data = train, family = "binomial")
+summary(logmodel)
+predict<- predict(logmodel, test, type = "response")  
+predict_res <- ifelse(predict >0.5, 1, 0)
+confuse_matrix=table(test$diabetes, predict_res)
+print(confuse_matrix)
+acc = sum(diag(confuse_matrix))/sum(confuse_matrix)
+print(acc)
+
+```
+The above summary table for the logistic regression model gave the information for beta_0, beta_1,....to beta_8. The z value was calculated from the estimated coefficient divided by the standard error. Pr(>|z|) is the p-value for whether the absolute coefficient is close to 0, meaning the attribute did not contribute to the prediction. The result showed the number of times pregnant, plasma glucose concentration at 2 hours in an oral glucose tolerance test, diastolic blood pressure, BMI, and pedigree function have high significance. The attribute with a positive coefficient makes the event, of being diagnosed with diabetes within 5 years, more likely to happen.
+The accuracy of the prediction is 0.77. However, the value might be a bias for evaluating the performance of the model when the classes are not equally distributed. In another way, we utilized the ROC curve, in which the x-axis is the false positive rate and the y-axis is the true positive rate, and calculated the area under the curve, AUC, to evaluate the model performance.    
+
+```{r error=TRUE }
+ROCRpred = prediction(predict, test$diabetes)
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+auc = performance(ROCRpred, "auc")
+auc@y.values
+# Ref:4
+```
+The above figures plotted the true positive rate and true negative rate in the different cut-offs. The best cut-off is around 0.4, which has a high true positive rate with a low false positive rate. 
+
+Since the scale of each attribute is different, the value of the coefficient is influenced by the scale, making it hard to compare the importance between the variants. We standardize both the training and testing set by subtracting the mean value of the training set and dividing them by the s.t.d of the training set. We trained the data after feature scaling with a logistic regression model. The summary table for model building demonstrated the value of estimated coefficients changed. However, the prediction results demonstrated feature scaling did not interfere with the prediction results. 
+```{r error=TRUE}
+#Feature scaling is applied before training
+
+train_mean= numeric(8)
+train_std=numeric(8)
+nor_train=train
+nor_test=test
+for (i in 1:8){
+   train_mean[i]=mean(train[[i]])
+   train_std[i]=sd(train[[i]])
+}
+for (i in 1:8){
+   nor_train[[i]]=(nor_train[[i]]-train_mean[i])/train_std[i]
+   nor_test[[i]]=(nor_test[[i]]-train_mean[i])/train_std[i]
+}
+logmodel_2 <- glm(diabetes~., data = nor_train, family = "binomial")
+summary(logmodel_2)
+nor_predict<- predict(logmodel_2, nor_test, type = "response")  
+nor_predict_res <- ifelse(nor_predict >0.5, 1, 0)
+nor_confuse_matrix=table(nor_test$diabetes, nor_predict_res)
+print(nor_confuse_matrix)
+nor_acc = sum(diag(nor_confuse_matrix))/sum(nor_confuse_matrix)
+print(nor_acc)
+
+```
+Among all the attributes, plasma glucose concentration at 2 hours in an oral glucose tolerance test is the most important indicator for the incidence of diabetes. 
+
+The prediction result from the data set with feature scaling
+```{r error=TRUE }
+ROCRpred = prediction(nor_predict, nor_test$diabetes)
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+#plot(ROCRperf, colorize=TRUE, 
+     #print.cutoffs.at=seq(0,1,0.2), text.adj=c(-0.2,1.7))
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+auc = performance(ROCRpred, "auc")
+auc@y.values
+```
+### 6. Conclusion
+The study provided the statistical analysis for each attribute in the data set to find the differences between the two groups of people. From the result of the test hypothesis, diastolic blood pressure has no significant difference between the two classes. However, the summary table of the logistic regression model demonstrated the attribute matters in the prediction. The model considers the intercorrelations between all the variants, and the test hypothesis only focuses on a single variant, causing a different result here. Besides diastolic blood pressure, the number of times pregnant, plasma glucose concentration at 2 hours in an oral glucose tolerance test, BMI, and pedigree function, which is family history, matter in the prediction. The AUC reached 0.83 in this model. The regression model provides information on which attribute is important to forecast. However, the model is hard to apply to the whole population since the data set only focuses on a small group of people.
+
+### 7. References
+1. Smith,~J.~W., Everhart,~J.~E., Dickson,~W.~C., Knowler,~W.~C., \& Johannes,~R.~S. (1988). Using the ADAP learning algorithm to forecast the onset of diabetes mellitus.  In {\it Proceedings of the Symposium on Computer Applications and Medical Care} (pp. 261--265).  IEEE Computer Society Press. 
+2. Pair plot:https://www.statology.org/ggplot-font-size/
+3. Test hypothesis:https://sphweb.bumc.bu.edu/otlt/mph-modules/bs/bs704_hypothesistest-means-proportions/BS704_HypothesisTest-Means-Proportions6.html
+4. ROC curve and AUC:https://medium.com/analytics-vidhya/a-guide-to-machine-learning-in-r-for-beginners-part-5-4c00f2366b90
+5. Logistic regression model:https://www.biostat.jhsph.edu/~iruczins/teaching/books/2019.openintro.statistics.pdf
+
